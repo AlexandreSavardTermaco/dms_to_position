@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>DMS to Address Converter</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+        .container {
+            width: 350px;
+            margin: 20px auto;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        .input-group {
+            margin-bottom: 10px;
+        }
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        .input-dms {
+            width: 50px;
+            padding: 5px;
+            margin-right: 5px;
+        }
+        .direction-select {
+            padding: 5px;
+        }
+        button {
+            padding: 8px 15px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        #address-output {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+        #error-message {
+            color: red;
+            margin-top: 10px;
+        }
+        /* Leaflet CSS */
+        #map {
+            height: 300px;
+            margin-top: 20px;
+        }
+    </style>
+    <!-- Include Leaflet CSS and JS from CDN -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h2>DMS to Address Converter</h2>
+        <div class="input-group">
+            <label for="latitude">Latitude (DMS):</label>
+            <input type="number" class="input-dms" id="latDegrees" placeholder="Deg" required>
+            <input type="number" class="input-dms" id="latMinutes" placeholder="Min" required>
+            <input type="number" class="input-dms" id="latSeconds" placeholder="Sec" required>
+            <select id="latDirection" class="direction-select">
+                <option value="N">N</option>
+                <option value="S">S</option>
+            </select>
+        </div>
+        <div class="input-group">
+            <label for="longitude">Longitude (DMS):</label>
+            <input type="number" class="input-dms" id="lonDegrees" placeholder="Deg" required>
+            <input type="number" class="input-dms" id="lonMinutes" placeholder="Min" required>
+            <input type="number" class="input-dms" id="lonSeconds" placeholder="Sec" required>
+            <select id="lonDirection" class="direction-select">
+                <option value="E">E</option>
+                <option value="W">W</option>
+            </select>
+        </div>
+        <button onclick="getAddress()">Get Address</button>
+        <div id="address-output">
+            <p><strong>Address:</strong> <span id="address-text"></span></p>
+        </div>
+        <div id="error-message"></div>
+        <!-- Map container -->
+        <div id="map"></div>
+    </div>
+
+    <script>
+        // Global variables for the map and marker
+        let map;
+        let marker;
+
+        function dmsToDecimal(degrees, minutes, seconds, direction) {
+            let dd = parseFloat(degrees) + parseFloat(minutes)/60 + parseFloat(seconds)/(60*60);
+            if (direction === 'S' || direction === 'W') {
+                dd *= -1;
+            }
+            return dd;
+        }
+
+        function initializeMap(lat, lon) {
+            // Initialize the map if it doesn't exist
+            if (!map) {
+                map = L.map('map').setView([lat, lon], 13);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; OpenStreetMap contributors'
+                }).addTo(map);
+            } else {
+                // Update the map view if it already exists
+                map.setView([lat, lon], 13);
+            }
+
+            // If a marker already exists, remove it
+            if (marker) {
+                marker.remove();
+            }
+            // Add a new marker at the specified location
+            marker = L.marker([lat, lon]).addTo(map);
+        }
+
+        function getAddress() {
+            const latDegrees = document.getElementById("latDegrees").value;
+            const latMinutes = document.getElementById("latMinutes").value;
+            const latSeconds = document.getElementById("latSeconds").value;
+            const latDirection = document.getElementById("latDirection").value;
+            const lonDegrees = document.getElementById("lonDegrees").value;
+            const lonMinutes = document.getElementById("lonMinutes").value;
+            const lonSeconds = document.getElementById("lonSeconds").value;
+            const lonDirection = document.getElementById("lonDirection").value;
+
+            if (!latDegrees || !latMinutes || !latSeconds || !lonDegrees || !lonMinutes || !lonSeconds) {
+                document.getElementById("error-message").innerText = "Please fill in all degree, minute, and second fields.";
+                return;
+            }
+            document.getElementById("error-message").innerText = ""; // Clear any previous error
+
+            const latDecimal = dmsToDecimal(latDegrees, latMinutes, latSeconds, latDirection);
+            const lonDecimal = dmsToDecimal(lonDegrees, lonMinutes, lonSeconds, lonDirection);
+
+            // Initialize or update the map with the new coordinates
+            initializeMap(latDecimal, lonDecimal);
+
+            const apiUrl = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latDecimal}&lon=${lonDecimal}`;
+
+            fetch(apiUrl)
+                .then(response => response.json())
+                .then(data => {
+                    let locationDetails = "";
+                    if (data.address) {
+                        const address = data.address;
+                        locationDetails += address.city ? address.city + ", " : "";
+                        locationDetails += address.town ? address.town + ", " : "";
+                        locationDetails += address.village ? address.village + ", " : "";
+                        locationDetails += address.county ? address.county + ", " : "";
+                        locationDetails += address.state ? address.state + ", " : "";
+                        locationDetails += address.country ? address.country : "";
+
+                        if (locationDetails) {
+                            document.getElementById("address-text").innerText = locationDetails.replace(/, $/, '');
+                        } else if (data.display_name) {
+                            // Fallback to display_name if no detailed address parts are found
+                            document.getElementById("address-text").innerText = data.display_name;
+                        } else {
+                            document.getElementById("address-text").innerText = "Location details not found.";
+                        }
+                    } else {
+                        document.getElementById("address-text").innerText = "Location details not found.";
+                    }
+                })
+                .catch(error => {
+                    console.error("Error fetching address:", error);
+                    document.getElementById("address-text").innerText = "Error fetching location details.";
+                });
+        }
+    </script>
+</body>
+</html>
